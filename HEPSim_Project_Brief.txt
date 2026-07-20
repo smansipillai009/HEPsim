@@ -1,0 +1,325 @@
+=====================================================================
+  HEPSim  —  Hybrid-Electric Propulsion Simulator
+  Open-source conceptual design platform for hybrid-electric aircraft
+  Founding & Onboarding Document  (v0.1)
+=====================================================================
+
+Author / maintainer : Mansi Pillai
+Status              : Concept -> seeded from the Aerothon (IIT Indore x HAL) build
+Audience            : Fellow developers + aero team members joining the project
+
+Read this once, top to bottom, before writing any code or committing
+to a task. It tells you WHAT we are building, WHY, WHAT you need to
+know, WHICH tools to install, and HOW the timeline is phased.
+
+
+---------------------------------------------------------------------
+0. RELATIONSHIP TO THE AEROTHON HACKATHON  (read this first)
+---------------------------------------------------------------------
+
+HEPSim is NOT a brand-new project competing for our time.
+
+It is the open-source, generalized version of the design-space
+exploration platform we are already building for the Aerothon
+hackathon (Problem 1: Hybrid-Electric Propulsion Optimization for a
+Fixed-Wing UAV).
+
+Plan:
+  - During the hackathon: build the focused, working version (one UAV
+    class, series + parallel architectures, rule-based energy
+    management, NSGA-II optimizer, dashboard).
+  - After the hackathon: refactor that codebase into HEPSim — clean
+    module boundaries, more architectures, more component types,
+    documentation, and a public release.
+
+So every design decision below is made with "will this generalize
+cleanly later?" in mind. We do NOT start HEPSim from scratch. We build
+the hackathon tool well, then lift it.
+
+
+---------------------------------------------------------------------
+1. ONE-SENTENCE DESCRIPTION
+---------------------------------------------------------------------
+
+HEPSim is an open-source platform that takes a mission requirement as
+input, automatically generates candidate hybrid-electric propulsion
+configurations, sizes them from a library of real components,
+simulates each through the full mission with a physics model and an
+energy-management strategy, rejects infeasible designs, optimizes the
+survivors, and recommends the best configuration with an engineering
+justification.
+
+In short: give it a mission, it hands back the best hybrid-electric
+propulsion design and shows its working.
+
+
+---------------------------------------------------------------------
+2. WHY THIS EXISTS (the problem we solve)
+---------------------------------------------------------------------
+
+Conceptual propulsion design today is slow and manual: an engineer
+guesses an architecture, guesses component sizes, simulates, it fails,
+they tweak, repeat. Commercial tools that automate this are expensive,
+closed, and export-restricted.
+
+HEPSim automates that trial-and-error loop and is open-source, so
+students, researchers, and small teams (the kind of tier-2/3 groups
+who can't afford closed tools) can explore hybrid-electric propulsion
+design spaces freely.
+
+Hybrid-electric propulsion is a real and growing aerospace field
+(NASA SUSAN, EPFD, X-57; HAL CATS/MALE UAV programs). The tooling to
+explore it openly does not really exist. That is the gap.
+
+
+---------------------------------------------------------------------
+3. THE CORE WORKFLOW (the whole platform in one line)
+---------------------------------------------------------------------
+
+  MISSION
+     -> GENERATE candidate architectures
+     -> SIZE components (from a real-component library)
+     -> SIMULATE the full mission (physics + energy management)
+     -> REJECT infeasible designs
+     -> OPTIMIZE the survivors (multi-objective)
+     -> RANK
+     -> EXPLAIN the winner
+
+Every module we build maps to exactly ONE stage above. If a proposed
+feature doesn't support one of these stages, it doesn't belong in the
+core. This keeps the project focused.
+
+
+---------------------------------------------------------------------
+4. THE TWO-LEVEL OPTIMIZATION (the heart of HEPSim)
+---------------------------------------------------------------------
+
+There are two nested optimization loops. Do not confuse them.
+
+  OUTER LOOP  — Design-Space Exploration
+      Question: which aircraft configuration is best?
+      Method:   multi-objective optimizer (NSGA-II)
+      Runs:     once per study
+
+  INNER LOOP  — Energy Management Strategy (EMS)
+      Question: for a given aircraft, how to split power between the
+                engine and battery second-by-second?
+      Method:   rule-based state machine (baseline);
+                dynamic programming / reinforcement learning (advanced)
+      Runs:     inside EVERY candidate evaluation
+
+The outer loop picks the hardware; the inner loop flies it well.
+
+
+---------------------------------------------------------------------
+5. SYSTEM ARCHITECTURE (modules)
+---------------------------------------------------------------------
+
+  hepsim/
+    mission/        - defines mission profile & requirements
+    library/        - real-component database (engines, motors, batteries)
+    generate/       - enumerates candidate architectures
+    physics/        - the simulation core:
+                        aero.py        (drag polar, phase power)
+                        propulsion.py  (engine map, altitude lapse, SFC)
+                        battery.py     (SoC integration, C-rate limits)
+                        fuel.py        (SFC integration)
+    ems/            - energy-management strategies
+                        rule_based.py
+                        dp.py     (advanced)
+                        rl.py     (advanced)
+    feasibility/    - rejection rules (MTOW, SoC, climb, packaging, CG...)
+    optimize/       - NSGA-II outer loop (pymoo)
+    dashboard/      - Streamlit + Plotly UI
+    explain/        - natural-language justification of the winner
+    data/           - CSV libraries & assumptions tables
+
+Clean module boundaries are non-negotiable — this is what lets the
+hackathon code graduate into an open-source project.
+
+
+---------------------------------------------------------------------
+6. THE PHYSICS (what the aero/mech team owns)
+---------------------------------------------------------------------
+
+Core equations (standard aircraft performance — Anderson/Raymer/Gudmundsson):
+
+  Cruise shaft power : P = (W / (L/D)) * V / eta_prop
+  Altitude lapse     : P_avail(h) = P_sea * (rho(h)/rho_0)^0.7
+  Battery SoC        : SoC(t+dt) = SoC(t) + (P_in - P_out)/eta * dt / E_batt
+  Fuel burn          : m_fuel = integral( SFC(P) * P dt )
+  Endurance          : E = (usable fuel + battery energy) / P_avg
+
+Anchored assumptions (every number sourced, with a sensitivity range):
+  L/D 14, prop eff 0.80, SFC 0.45 kg/kWh, battery 220 Wh/kg,
+  SoC window 20-90%, empty-structure fraction ~42% MTOW.
+
+The aero/mech team OWNS these models and the component library. The
+software team implements them. This boundary is deliberate: the
+physics must be correct, or every one of the hundreds of evaluated
+designs is wrong.
+
+
+---------------------------------------------------------------------
+7. WHAT YOU NEED TO KNOW (prerequisite knowledge)
+---------------------------------------------------------------------
+
+FOR EVERYONE:
+  - Basic Git & GitHub (branch, commit, pull request, review)
+  - Reading and writing CSV data
+  - The core workflow in section 3 (memorize it)
+
+FOR SOFTWARE / CS DEVELOPERS:
+  - Python (functions, classes, numpy arrays, basic OOP)
+  - numpy / scipy — numerical integration, optimization basics
+  - Multi-objective optimization concept (Pareto front, NSGA-II) —
+    you don't need to implement it, pymoo provides it, but understand
+    what a Pareto front means
+  - (Advanced) reinforcement learning basics if you take the RL EMS:
+    MDP, state/action/reward, Q-learning
+  - Streamlit + Plotly for the dashboard
+  - Clean code / module design (this is going open-source)
+
+FOR AERO / MECH TEAM:
+  - Aircraft performance fundamentals: lift, drag, L/D, thrust, power
+  - The Breguet endurance/range relations
+  - Propulsion basics: what SFC is, why part-load and altitude matter
+  - Hybrid-electric architectures: series vs parallel vs
+    series-parallel vs distributed
+  - Battery basics: energy vs power density, SoC, C-rate, safety limits
+  - Component sizing logic and mass-budget closure to MTOW
+  - Where to find real datasheets (manufacturer sites, NASA/HAL reports)
+  - Manufacturing/assembly/CG realism (why discrete components, why
+    packaging and centre-of-gravity constrain the design)
+
+
+---------------------------------------------------------------------
+8. TOOLKIT (what to install)
+---------------------------------------------------------------------
+
+  Language        : Python 3.10+
+  Core numerics   : numpy, scipy
+  Optimization    : pymoo            (NSGA-II, multi-objective)
+  Data handling   : pandas
+  Dashboard       : streamlit, plotly
+  EMS (advanced)  : (RL) PyTorch or a tabular Q-learning implementation
+  CAD / drawing   : pythonOCC-core   (general-arrangement drawings)
+  Plotting        : matplotlib
+  Version control : git + GitHub
+  Packaging(later): docker, GitHub Actions (CI), mkdocs (docs)
+  Env management  : venv or conda; a requirements.txt / environment.yml
+
+  Quick start:
+    python -m venv venv
+    source venv/bin/activate      (Windows: venv\Scripts\activate)
+    pip install numpy scipy pymoo pandas streamlit plotly matplotlib
+
+
+---------------------------------------------------------------------
+9. ROLE-WISE DIVISION
+---------------------------------------------------------------------
+
+AERO / MECH LEAD (Mansi):
+  - Own the physics models and governing equations
+  - Build & maintain the real-component library (sourced specs)
+  - Define feasibility + manufacturing/CG/packaging constraints
+  - Provide hand-calc ground truth for validation
+  - Component sizing methodology; pure-thermal baseline
+  - General-arrangement drawings; engineering justification
+
+SOFTWARE / CS DEVELOPERS:
+  - Implement the simulation core (physics modules) from the spec
+  - Build the candidate generator and NSGA-II outer optimizer
+  - Implement EMS (rule-based first; DP/RL later)
+  - Build the Streamlit + Plotly dashboard and the explainer
+  - Own repo structure, tests, CI, and open-source packaging
+
+SHARED / INTERFACE POINTS (agree these explicitly):
+  - The assumptions table (signed off jointly)
+  - The component-library CSV schema (mech fills, CS consumes)
+  - The validation gate: sim output MUST match hand-calc before the
+    optimizer is trusted
+
+
+---------------------------------------------------------------------
+10. TIMELINE (phased)
+---------------------------------------------------------------------
+
+PHASE 0 — Hackathon build (NOW, during Aerothon)
+  Goal: a working focused version for the competition.
+  - One UAV class, series + parallel architectures
+  - Real component library (starter)
+  - Physics sim (5 mission phases)
+  - Rule-based EMS inner loop
+  - Feasibility filters
+  - NSGA-II outer optimizer
+  - Streamlit dashboard
+  - Pure-thermal baseline comparison
+  Deliverable: complete, demoable hackathon submission.
+
+PHASE 1 — Refactor into HEPSim (2-4 weeks post-hackathon)
+  Goal: turn the hackathon code into a clean open-source skeleton.
+  - Reorganize into the module structure (section 5)
+  - Write a proper README, LICENSE (Apache-2.0 suggested), and docs
+  - Add unit tests and a validation notebook (sim vs hand-calc)
+  - Publish the repo publicly on GitHub
+  Deliverable: v0.1 public release, installable and documented.
+
+PHASE 2 — Breadth (1-2 months)
+  Goal: cover more of the design space.
+  - Add series-parallel + distributed-electric architectures
+  - Expand the component library (community-contributable)
+  - Add DP global-optimum EMS as a benchmark
+  Deliverable: v0.2 — multi-architecture support.
+
+PHASE 3 — Depth & intelligence (2-3 months)
+  Goal: advanced capability.
+  - RL online EMS (near-optimal, deployable policy)
+  - Parametric CAD auto-generation (pythonOCC) per candidate
+  - Thermal/cooling sizing; uncertainty quantification
+  Deliverable: v0.3 — advanced EMS + CAD.
+
+PHASE 4 — Community & polish (ongoing)
+  Goal: a real open-source tool others use.
+  - Web-hosted version (run a study in-browser)
+  - Contribution guide, issue templates, CI/CD
+  - Community component database with governance
+  Deliverable: v1.0 — public, documented, community-driven.
+
+Timelines are targets, not promises. Phase 0 is the only hard
+deadline (the hackathon). Everything after is best-effort and
+depends on who stays on the project.
+
+
+---------------------------------------------------------------------
+11. GROUND RULES (how we keep this healthy)
+---------------------------------------------------------------------
+
+  - Scope discipline: if a feature doesn't support a workflow stage
+    (section 3), it goes on the roadmap, not into the core.
+  - A working simple version always beats a broken ambitious one.
+  - Every number in the library/assumptions traces to a source, or is
+    labelled "engineering estimate" with reasoning. No fake precision.
+  - The sim is not trusted until it reproduces the hand-calc.
+  - Clean module boundaries so the code stays open-source-ready.
+  - Physics is owned by aero/mech; implementation by software; the
+    interface (assumptions table + CSV schema) is shared and explicit.
+
+
+---------------------------------------------------------------------
+12. FIRST ACTIONS FOR A NEW JOINER
+---------------------------------------------------------------------
+
+  1. Read this document fully.
+  2. Install the toolkit (section 8) and clone the repo.
+  3. Read the core workflow (section 3) until you can recite it.
+  4. Pick a module you own from the role division (section 9).
+  5. For aero/mech: verify one row of the component library against a
+     real datasheet. For CS: run the existing sim on one baseline
+     aircraft and confirm it matches the hand-calc.
+  6. Open a small first pull request. Get the collaboration loop going.
+
+=====================================================================
+  END — HEPSim founding document v0.1
+  Questions -> Mansi. Keep this file updated as the project evolves.
+=====================================================================
